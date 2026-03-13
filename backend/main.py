@@ -80,11 +80,19 @@ async def run_all_agents(url: str):
     ws_stranger = manager.active_connections.get("stranger")
     ws_oracle = manager.active_connections.get("oracle")
 
+    print(f"Sentinel WS: {ws_sentinel}")
+    print(f"Stranger WS: {ws_stranger}")
+    print(f"Oracle WS: {ws_oracle}")
+
+    if not ws_sentinel or not ws_stranger or not ws_oracle:
+        print("ERROR: One or more WebSocket connections missing!")
+        return
+
     t1 = asyncio.create_task(run_sentinel(url, ws_sentinel))
     t2 = asyncio.create_task(run_stranger(url, ws_stranger))
     t3 = asyncio.create_task(run_oracle(url, ws_oracle))
 
-    await asyncio.gather(t1, t2, t3)
+    await asyncio.gather(t1, t2, t3, return_exceptions=True)
     
     # Generate final verdict using the new prompt logic
     verdict = generate_verdict(60, 50, 75, [])
