@@ -21,9 +21,14 @@ async def send_message(websocket, msg_type, text, severity="INFO", category="gen
     else:
         print(f"[SENTINEL] {msg_type}: {text}")
 
-async def run_sentinel(url, websocket, crawler):
+async def run_sentinel(url, websocket):
     await send_message(websocket, "reasoning", f"Starting Sentinel analysis for {url}", "INFO", "init")
     await asyncio.sleep(0.5)
+
+    from playwright.async_api import async_playwright
+    playwright = await async_playwright().start()
+    browser = await playwright.chromium.launch(headless=True)
+    pw_context = await browser.new_context()
 
     base_domain = urlparse(url).netloc
     discovered_endpoints = set([url])
@@ -32,7 +37,7 @@ async def run_sentinel(url, websocket, crawler):
     # 1. Autonomous crawling
     await send_message(websocket, "reasoning", "Finding endpoints and mapping attack surface...", "INFO", "crawling")
     try:
-        page = await crawler.get_page()
+        page = await pw_context.new_page()
         await page.goto(url, wait_until="networkidle")
         
         # Extract links
@@ -184,5 +189,7 @@ async def run_sentinel(url, websocket, crawler):
     else:
         await send_message(websocket, "finding", "Target is not using HTTPS (No SSL)", "HIGH", "ssl", 0)
 
+    await browser.close()
+    await playwright.stop()
     await send_message(websocket, "judgment", "Technical analysis complete.", "INFO", "status", 0)
     return {"status": "done"}

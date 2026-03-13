@@ -1,0 +1,45 @@
+﻿--- Starting parallel agent testing on http://example.com ---
+[TEST CLIENT] Connected to SENTINEL stream
+[TEST CLIENT] Connected to ORACLE stream
+[TEST CLIENT] Connected to STRANGER stream
+[TEST CLIENT] Triggered analysis via API for http://example.com
+[SENTINEL] [REASONING] [INFO]: Starting Sentinel analysis for http://example.com
+[STRANGER] [REASONING] [INFO]: Loading page as a first-time user...
+[ORACLE] [REASONING] [INFO]: Loading page to extract full text and evaluate business positioning...
+[STRANGER] [FINDING] [CRITICAL]: Error during UI traversal: Traceback (most recent call last):
+  File "C:\Users\HP\DELPHI\backend\agents\stranger.py", line 23, in run_stranger
+    playwright = await async_playwright().start()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HP\AppData\Local\Programs\Python\Python313\Lib\site-packages\playwright\async_api\_context_manager.py", line 51, in start
+    return await self.__aenter__()
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HP\AppData\Local\Programs\Python\Python313\Lib\site-packages\playwright\async_api\_context_manager.py", line 46, in __aenter__
+    playwright = AsyncPlaywright(next(iter(done)).result())
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\HP\AppData\Local\Programs\Python\Python313\Lib\site-packages\playwright\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "C:\Users\HP\AppData\Local\Programs\Python\Python313\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        stderr=stderr, **kwds)
+        ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HP\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 1794, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        protocol, popen_args, False, stdin, stdout, stderr,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        bufsize, **kwargs)
+        ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\HP\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 539, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+
+[STRANGER] [JUDGMENT] [INFO]: UX analysis complete.
+[ORACLE] [FINDING] [CRITICAL]: Failed to analyze text: NotImplementedError()
+[ORACLE] [JUDGMENT] [INFO]: Business analysis complete.
+--- Test Complete ---

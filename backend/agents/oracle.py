@@ -19,10 +19,14 @@ async def send_message(websocket, msg_type, text, severity="INFO", category="gen
     else:
         print(f"[ORACLE] {msg_type}: {text}")
 
-async def run_oracle(url, websocket, crawler):
+async def run_oracle(url, websocket):
     await send_message(websocket, "reasoning", "Loading page to extract full text and evaluate business positioning...", "INFO", "init")
     try:
-        page = await crawler.get_page()
+        from playwright.async_api import async_playwright
+        playwright = await async_playwright().start()
+        browser = await playwright.chromium.launch(headless=True)
+        context = await browser.new_context()
+        page = await context.new_page()
         await page.goto(url, wait_until="networkidle")
         
         # 1. Scrape full text
@@ -131,9 +135,14 @@ async def run_oracle(url, websocket, crawler):
             await send_message(websocket, "finding", f"Unprofessional punctuation detected (multiple exclamation marks '!!'): {exclamations} instances.", "MEDIUM", "grammar", 0)
 
         await page.close()
+        await context.close()
+        await browser.close()
+        await playwright.stop()
 
     except Exception as e:
-        await send_message(websocket, "finding", f"Failed to analyze text: {e}", "CRITICAL", "error", 0)
+        import traceback
+        traceback.print_exc()
+        await send_message(websocket, "finding", f"Failed to analyze text: {repr(e)}", "CRITICAL", "error", 0)
 
     await send_message(websocket, "judgment", "Business analysis complete.", "INFO", "status", 0)
     return {"status": "done"}
