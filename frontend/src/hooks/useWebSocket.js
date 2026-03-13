@@ -117,7 +117,7 @@ export default function useWebSocket() {
     let connectedCount = 0;
     const agents = ['sentinel', 'stranger', 'oracle'];
 
-    // Setup a fallback timer: if we don't connect in 8 seconds, trigger demo mode
+    // Setup a fallback timer: if we don't connect in 40 seconds, trigger demo mode
     const fallbackTimer = setTimeout(() => {
       if (connectedCount < 3) {
         console.warn("Connection timeout - falling back to demo mode");
@@ -125,7 +125,7 @@ export default function useWebSocket() {
         setTimeout(() => setShowOfflineToast(false), 4000);
         startTestMode();
       }
-    }, 8000);
+    }, 40000);
 
     agents.forEach(agent => {
       const ws = new WebSocket(WS_URLS[agent]);
