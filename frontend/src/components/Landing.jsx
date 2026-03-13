@@ -36,7 +36,61 @@ const agents = [
   },
 ];
 
-export default function Landing({ onSendUrl, onTestMode }) {
+function AgentCard({ agent }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        flex: 1,
+        background: '#13131a',
+        borderRadius: '8px',
+        padding: '16px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '10px',
+        transition: 'all 0.3s ease',
+        boxShadow: hovered
+          ? `0 0 25px ${agent.color}30, inset 0 0 20px ${agent.color}08`
+          : 'none',
+        border: hovered
+          ? `1px solid ${agent.color}40`
+          : '1px solid transparent',
+        borderLeft: `3px solid ${agent.color}`,
+        cursor: 'default',
+      }}
+    >
+      <agent.icon size={22} color={agent.color} />
+      <span
+        style={{
+          fontSize: '11px',
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          color: '#f8fafc',
+          textAlign: 'center',
+        }}
+      >
+        {agent.name}
+      </span>
+      <span
+        style={{
+          fontSize: '10px',
+          color: '#94a3b8',
+          textAlign: 'center',
+          lineHeight: 1.4,
+        }}
+      >
+        {agent.desc}
+      </span>
+    </div>
+  );
+}
+
+export default function Landing({ onSendUrl, onTestMode, backendConnectivity }) {
   const [url, setUrl] = useState('');
 
   const handleSubmit = (e) => {
@@ -54,8 +108,21 @@ export default function Landing({ onSendUrl, onTestMode }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
+      {/* Animated dot grid background */}
+      <div
+        className="grid-bg"
+        style={{
+          position: 'absolute',
+          inset: '-40px',
+          opacity: 0.3,
+          zIndex: 0,
+        }}
+      />
+
       <motion.div
         variants={container}
         initial="hidden"
@@ -67,23 +134,42 @@ export default function Landing({ onSendUrl, onTestMode }) {
           width: '100%',
           maxWidth: '640px',
           padding: '0 24px',
+          position: 'relative',
+          zIndex: 1,
         }}
       >
-        {/* Title */}
-        <motion.h1
-          variants={item}
-          style={{
-            fontSize: '96px',
-            fontWeight: 900,
-            letterSpacing: '0.3em',
-            color: '#ffffff',
-            textShadow: '0 0 60px rgba(255,255,255,0.15)',
-            margin: 0,
-            lineHeight: 1,
-          }}
-        >
-          DELPHI
-        </motion.h1>
+        {/* Title with breathing glow */}
+        <motion.div variants={item} style={{ position: 'relative' }}>
+          {/* Red glow behind title */}
+          <div
+            className="title-glow-bg"
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '400px',
+              height: '120px',
+              background: 'radial-gradient(ellipse, rgba(239,68,68,0.12) 0%, transparent 70%)',
+              borderRadius: '50%',
+              pointerEvents: 'none',
+            }}
+          />
+          <h1
+            style={{
+              fontSize: '96px',
+              fontWeight: 900,
+              letterSpacing: '0.3em',
+              color: '#ffffff',
+              textShadow: '0 0 60px rgba(255,255,255,0.15)',
+              margin: 0,
+              lineHeight: 1,
+              position: 'relative',
+            }}
+          >
+            DELPHI
+          </h1>
+        </motion.div>
 
         {/* Tagline */}
         <motion.p
@@ -124,7 +210,7 @@ export default function Landing({ onSendUrl, onTestMode }) {
               width: '100%',
               padding: '16px 20px',
               background: '#13131a',
-              border: '1px solid #2a2a3a',
+              border: backendConnectivity === 'error' ? '1px solid #f97316' : '1px solid #2a2a3a',
               borderRadius: '8px',
               color: '#f8fafc',
               fontSize: '15px',
@@ -133,14 +219,15 @@ export default function Landing({ onSendUrl, onTestMode }) {
               transition: 'border 0.2s ease, box-shadow 0.2s ease',
             }}
             onFocus={(e) => {
-              e.target.style.borderColor = '#ffffff';
-              e.target.style.boxShadow = '0 0 20px rgba(255,255,255,0.08)';
+              e.target.style.borderColor = backendConnectivity === 'error' ? '#f97316' : '#ffffff';
+              e.target.style.boxShadow = backendConnectivity === 'error' ? '0 0 20px rgba(249,115,22,0.15)' : '0 0 20px rgba(255,255,255,0.08)';
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = '#2a2a3a';
+              e.target.style.borderColor = backendConnectivity === 'error' ? 'rgba(249,115,22,0.5)' : '#2a2a3a';
               e.target.style.boxShadow = 'none';
             }}
           />
+
           <button
             type="submit"
             disabled={!url.trim()}
@@ -173,8 +260,26 @@ export default function Landing({ onSendUrl, onTestMode }) {
               }
             }}
           >
-            CONSULT THE ORACLE
+            {backendConnectivity === 'error' ? 'CONSULT THE ORACLE (DEMO MODE)' : 'CONSULT THE ORACLE'}
           </button>
+          
+          {backendConnectivity === 'error' && (
+            <div style={{
+              width: '100%',
+              textAlign: 'center',
+              marginTop: '12px',
+              fontSize: '12px',
+              color: '#f97316',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px'
+            }}>
+              <span style={{ fontSize: '14px' }}>⚡</span> Live backend offline — demo mode active
+            </div>
+          )}
+
           <button
             type="button"
             onClick={onTestMode}
@@ -218,47 +323,26 @@ export default function Landing({ onSendUrl, onTestMode }) {
           }}
         >
           {agents.map((agent) => (
-            <div
-              key={agent.name}
-              style={{
-                flex: 1,
-                background: '#13131a',
-                borderRadius: '8px',
-                borderLeft: `3px solid ${agent.color}`,
-                padding: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '10px',
-              }}
-            >
-              <agent.icon size={22} color={agent.color} />
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  color: '#f8fafc',
-                  textAlign: 'center',
-                }}
-              >
-                {agent.name}
-              </span>
-              <span
-                style={{
-                  fontSize: '10px',
-                  color: '#94a3b8',
-                  textAlign: 'center',
-                  lineHeight: 1.4,
-                }}
-              >
-                {agent.desc}
-              </span>
-            </div>
+            <AgentCard key={agent.name} agent={agent} />
           ))}
         </motion.div>
       </motion.div>
+
+      {/* Version tag */}
+      <div
+        style={{
+          position: 'fixed',
+          bottom: '16px',
+          right: '24px',
+          fontSize: '10px',
+          color: '#333',
+          letterSpacing: '0.1em',
+          fontFamily: '"JetBrains Mono", monospace',
+          zIndex: 2,
+        }}
+      >
+        DELPHI v1.0
+      </div>
     </div>
   );
 }
