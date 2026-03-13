@@ -1,5 +1,6 @@
 import asyncio
-from core.prompts import mock_llama3_vision
+from core.prompts import stranger_firstimpression_reasoning, stranger_ux_reasoning
+from core.ollama_client import stream_reasoning
 
 async def send_message(websocket, msg_type, text, severity="INFO", category="general", value=0):
     if websocket:
@@ -16,12 +17,14 @@ async def send_message(websocket, msg_type, text, severity="INFO", category="gen
     else:
         print(f"[STRANGER] {msg_type}: {text}")
 
-async def run_stranger(url, websocket, crawler):
+async def run_stranger(url, websocket):
     await send_message(websocket, "reasoning", "Loading page as a first-time user...", "INFO", "init")
     try:
-        page = await crawler.get_page()
-        # Set viewport to standard desktop
-        await page.set_viewport_size({"width": 1280, "height": 720})
+        from playwright.async_api import async_playwright
+        playwright = await async_playwright().start()
+        browser = await playwright.chromium.launch(headless=True)
+        desktop_context = await browser.new_context(viewport={"width": 1280, "height": 720})
+        page = await desktop_context.new_page()
         await page.goto(url, wait_until="networkidle")
         
         # 1. First impression & Screenshot
@@ -29,9 +32,10 @@ async def run_stranger(url, websocket, crawler):
         screenshot_path = f"target_screenshot.png"
         await page.screenshot(path=screenshot_path, full_page=True)
         
-        vision_result = await mock_llama3_vision(screenshot_path)
-        if vision_result["value_proposition_unclear"]:
-             await send_message(websocket, "finding", "VALUE PROPOSITION UNCLEAR - Takes too long to communicate product purpose", "HIGH", "first_impression", 0)
+        #vision_result = await mock_llama3_vision(screenshot_path)
+        # Use simple presence check or text to simulate vision clarity analysis
+        prompt = stranger_firstimpression_reasoning("Product landing page with clear CTA")
+        await stream_reasoning(prompt, websocket, "stranger")
 
         # 2. CTA Discovery
         await send_message(websocket, "reasoning", "Looking for primary CTA above the fold...", "INFO", "cta")
@@ -127,7 +131,11 @@ async def run_stranger(url, websocket, crawler):
 
         # 5. Mobile responsiveness check
         await send_message(websocket, "reasoning", "Switching to mobile viewport (375x812) to verify layout and tappable areas...", "INFO", "mobile")
-        mobile_page = await crawler.get_page(mobile=True)
+        mobile_context = await browser.new_context(
+            viewport={'width': 375, 'height': 812},
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1"
+        )
+        mobile_page = await mobile_context.new_page()
         await mobile_page.goto(url, wait_until="networkidle")
         
         mobile_issues = await mobile_page.evaluate('''() => {
@@ -172,14 +180,22 @@ async def run_stranger(url, websocket, crawler):
 
         if mobile_issues:
             for issue in mobile_issues:
+                prompt = stranger_ux_reasoning(issue)
+                await stream_reasoning(prompt, websocket, "stranger")
                 await send_message(websocket, "finding", f"Mobile issue: {issue}", "HIGH", "mobile", 0)
         else:
             await send_message(websocket, "finding", "Mobile layout is stable, text is readable, and buttons are tappable sizes", "LOW", "mobile", 1)
 
         await mobile_page.close()
+        await mobile_context.close()
+        await desktop_context.close()
+        await browser.close()
+        await playwright.stop()
 
     except Exception as e:
-        await send_message(websocket, "finding", f"Error during UI traversal: {e}", "CRITICAL", "error", 0)
+        import traceback
+        err_str = traceback.format_exc()
+        await send_message(websocket, "finding", f"Error during UI traversal: {err_str}", "CRITICAL", "error", 0)
         
     await send_message(websocket, "judgment", "UX analysis complete.", "INFO", "status", 0)
     return {"status": "done"}

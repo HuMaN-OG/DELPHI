@@ -3,6 +3,8 @@ import re
 from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
+from core.prompts import oracle_business_reasoning
+from core.ollama_client import stream_reasoning
 
 async def send_message(websocket, msg_type, text, severity="INFO", category="general", value=0):
     if websocket:
@@ -19,10 +21,14 @@ async def send_message(websocket, msg_type, text, severity="INFO", category="gen
     else:
         print(f"[ORACLE] {msg_type}: {text}")
 
-async def run_oracle(url, websocket, crawler):
+async def run_oracle(url, websocket):
     await send_message(websocket, "reasoning", "Loading page to extract full text and evaluate business positioning...", "INFO", "init")
     try:
-        page = await crawler.get_page()
+        from playwright.async_api import async_playwright
+        playwright = await async_playwright().start()
+        browser = await playwright.chromium.launch(headless=True)
+        context = await browser.new_context()
+        page = await context.new_page()
         await page.goto(url, wait_until="networkidle")
         
         # 1. Scrape full text
@@ -43,12 +49,9 @@ async def run_oracle(url, websocket, crawler):
         }''')
         
         full_text_lower = page_info['full_text'].lower()
-        
-        # 2. Value proposition analysis (mock LLaMA3 + real buzzword scan)
-        await send_message(websocket, "reasoning", "Checking value proposition clarity and scanning for vague buzzwords...", "INFO", "value_prop")
-        
-        # MOCK LLaMA3 vision/analysis placeholder request (returns hardcoded)
-        await send_message(websocket, "finding", "VALUE PROPOSITION UNCLEAR: Fails to clearly answer 'what is this, who is it for, why does it matter'", "HIGH", "value_prop", 0)
+        # 2. Value proposition analysis
+        prompt = oracle_business_reasoning(page_info['full_text'])
+        await stream_reasoning(prompt, websocket, "oracle")
         
         buzzwords = ['revolutionary', 'seamless', 'innovative', 'next-gen', 'paradigm shift', 'synergy']
         found_buzzwords = [bw for bw in buzzwords if bw in full_text_lower]
@@ -131,9 +134,14 @@ async def run_oracle(url, websocket, crawler):
             await send_message(websocket, "finding", f"Unprofessional punctuation detected (multiple exclamation marks '!!'): {exclamations} instances.", "MEDIUM", "grammar", 0)
 
         await page.close()
+        await context.close()
+        await browser.close()
+        await playwright.stop()
 
     except Exception as e:
-        await send_message(websocket, "finding", f"Failed to analyze text: {e}", "CRITICAL", "error", 0)
+        import traceback
+        traceback.print_exc()
+        await send_message(websocket, "finding", f"Failed to analyze text: {repr(e)}", "CRITICAL", "error", 0)
 
     await send_message(websocket, "judgment", "Business analysis complete.", "INFO", "status", 0)
     return {"status": "done"}

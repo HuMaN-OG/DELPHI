@@ -5,6 +5,13 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin, urlparse
 import ssl
 import socket
+from core.ollama_client import stream_reasoning
+from core.prompts import (
+    sentinel_crawl_reasoning,
+    sentinel_header_reasoning,
+    sentinel_load_reasoning,
+    sentinel_fuzz_reasoning
+)
 
 async def send_message(websocket, msg_type, text, severity="INFO", category="general", value=0):
     if websocket:
@@ -21,18 +28,22 @@ async def send_message(websocket, msg_type, text, severity="INFO", category="gen
     else:
         print(f"[SENTINEL] {msg_type}: {text}")
 
-async def run_sentinel(url, websocket, crawler):
+async def run_sentinel(url, websocket):
     await send_message(websocket, "reasoning", f"Starting Sentinel analysis for {url}", "INFO", "init")
     await asyncio.sleep(0.5)
+
+    from playwright.async_api import async_playwright
+    playwright = await async_playwright().start()
+    browser = await playwright.chromium.launch(headless=True)
+    pw_context = await browser.new_context()
 
     base_domain = urlparse(url).netloc
     discovered_endpoints = set([url])
     discovered_forms = []
 
     # 1. Autonomous crawling
-    await send_message(websocket, "reasoning", "Finding endpoints and mapping attack surface...", "INFO", "crawling")
     try:
-        page = await crawler.get_page()
+        page = await pw_context.new_page()
         await page.goto(url, wait_until="networkidle")
         
         # Extract links
@@ -61,12 +72,13 @@ async def run_sentinel(url, websocket, crawler):
         discovered_forms = forms
         
         await send_message(websocket, "finding", f"Discovered {len(discovered_endpoints)} internal endpoints and {len(discovered_forms)} forms", "LOW", "crawling", len(discovered_endpoints))
+        prompt = sentinel_crawl_reasoning(endpoints_found=len(discovered_endpoints), forms_found=len(discovered_forms))
+        await stream_reasoning(prompt, websocket, "sentinel")
         await page.close()
     except Exception as e:
         await send_message(websocket, "finding", f"Failed to crawl: {e}", "CRITICAL", "crawling", 0)
 
     # 2. Security headers
-    await send_message(websocket, "reasoning", "Analyzing HTTP security headers...", "INFO", "headers")
     try:
         loop = asyncio.get_event_loop()
         resp = await loop.run_in_executor(None, lambda: requests.get(url, timeout=10))
@@ -80,9 +92,14 @@ async def run_sentinel(url, websocket, crawler):
             'Referrer-Policy': 'Potential referrer data leakage'
         }
         
+        missing_headers = []
         for header, risk in security_headers.items():
             if header not in resp.headers and header.lower() not in resp.headers:
+                missing_headers.append(header)
                 await send_message(websocket, "finding", f"Missing {header}: {risk}", "HIGH", "headers", 0)
+        
+        prompt = sentinel_header_reasoning(missing_headers)
+        await stream_reasoning(prompt, websocket, "sentinel")
     except Exception as e:
          await send_message(websocket, "finding", f"Failed to read headers: {e}", "CRITICAL", "headers", 0)
 
@@ -109,11 +126,15 @@ async def run_sentinel(url, websocket, crawler):
             
             if error_rate > 0.2:
                 breaking_point = users
+                prompt = sentinel_load_reasoning(breaking_point, error_rate * 100)
+                await stream_reasoning(prompt, websocket, "sentinel")
                 await send_message(websocket, "finding", f"Collapses at {users} concurrent users (Error rate: {error_rate*100:.1f}%)", "CRITICAL", "load", users)
                 break
             await asyncio.sleep(0.5)
 
     if not breaking_point:
+         prompt = sentinel_load_reasoning(500, 0)
+         await stream_reasoning(prompt, websocket, "sentinel")
          await send_message(websocket, "finding", "Survived 500 concurrent users with <20% error rate", "LOW", "load", 500)
 
     # 4. Input fuzzing
@@ -149,12 +170,18 @@ async def run_sentinel(url, websocket, crawler):
                         resp_text = fuzz_resp.text.lower()
                         # Analyze basic reflections / errors
                         if attack_type == "SQLi" and any(err in resp_text for err in ["sql syntax", "database error", "mysql_fetch"]):
+                            prompt = sentinel_fuzz_reasoning("SQL Injection", action)
+                            await stream_reasoning(prompt, websocket, "sentinel")
                             await send_message(websocket, "finding", f"SQL Injection vulnerability confirmed on form action: {action}", "CRITICAL", "fuzzing", 0)
                             break
                         elif attack_type == "XSS" and payload.lower() in resp_text:
+                            prompt = sentinel_fuzz_reasoning("Reflected XSS", action)
+                            await stream_reasoning(prompt, websocket, "sentinel")
                             await send_message(websocket, "finding", f"Reflected XSS vulnerability confirmed on form action: {action}", "HIGH", "fuzzing", 0)
                             break
                         elif attack_type == "Path Traversal" and "root:x:0:0" in resp_text:
+                            prompt = sentinel_fuzz_reasoning("Path Traversal", action)
+                            await stream_reasoning(prompt, websocket, "sentinel")
                             await send_message(websocket, "finding", f"Path Traversal vulnerability confirmed on form action: {action}", "CRITICAL", "fuzzing", 0)
                             break
                         elif fuzz_resp.status_code >= 500:
@@ -184,5 +211,7 @@ async def run_sentinel(url, websocket, crawler):
     else:
         await send_message(websocket, "finding", "Target is not using HTTPS (No SSL)", "HIGH", "ssl", 0)
 
+    await browser.close()
+    await playwright.stop()
     await send_message(websocket, "judgment", "Technical analysis complete.", "INFO", "status", 0)
     return {"status": "done"}
