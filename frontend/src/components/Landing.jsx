@@ -254,7 +254,7 @@ export default function Landing({ onSendUrl, onTestMode, backendConnectivity, da
               }
             }}
           >
-            {backendConnectivity === 'error' ? 'CONSULT THE ORACLE (DEMO MODE)' : 'CONSULT THE ORACLE'}
+            CONSULT THE ORACLE
           </button>
 
           {backendConnectivity === 'error' && (
