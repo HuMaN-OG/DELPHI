@@ -2,9 +2,9 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { runTestSimulation } from '../testSocket';
 
 const WS_URLS = {
-  sentinel: 'ws://https://delphi-backend.onrender.com//ws/sentinel',
-  stranger: 'ws://https://delphi-backend.onrender.com//ws/stranger',
-  oracle: 'ws://https://delphi-backend.onrender.com//ws/oracle'
+  sentinel: 'ws://https://localhost:8000//ws/sentinel',
+  stranger: 'ws://https://localhost:8000//ws/stranger',
+  oracle: 'ws://https://localhost:8000//ws/oracle'
 }
 
 const initialAgentState = {
