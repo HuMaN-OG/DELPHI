@@ -2,9 +2,9 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { runTestSimulation } from '../testSocket';
 
 const WS_URLS = {
-  sentinel: 'ws://https://localhost:8000//ws/sentinel',
-  stranger: 'ws://https://localhost:8000//ws/stranger',
-  oracle: 'ws://https://localhost:8000//ws/oracle'
+  sentinel: 'ws://localhost:8000/ws/sentinel',
+  stranger: 'ws://localhost:8000/ws/stranger',
+  oracle: 'ws://localhost:8000/ws/oracle'
 }
 
 const initialAgentState = {
@@ -33,17 +33,7 @@ export default function useWebSocket() {
   const wsRefs = useRef({});
   const testTimerRef = useRef(null);
 
-  // Check connectivity on mount
   useEffect(() => {
-    const checkBackend = async () => {
-      try {
-        const resp = await fetch('http://localhost:8000/api/analyze', { method: 'OPTIONS' });
-        if (resp.ok) setBackendConnectivity('connected');
-      } catch (e) {
-        setBackendConnectivity('error');
-      }
-    };
-    checkBackend();
   }, []);
 
   const handleMessage = useCallback((data) => {
@@ -109,17 +99,9 @@ export default function useWebSocket() {
   }, [handleMessage]);
 
   const sendUrl = useCallback((url) => {
-    if (backendConnectivity === 'error') {
-      setShowOfflineToast(true);
-      setTimeout(() => setShowOfflineToast(false), 4000);
-      startTestMode();
-      return;
-    }
-
     setTargetUrl(url);
     setScreen('dashboard');
 
-    // Reset state
     setSentinelData({ ...initialAgentState, status: 'analyzing' });
     setStrangerData({ ...initialAgentState, status: 'analyzing' });
     setOracleData({ ...initialAgentState, status: 'analyzing' });
@@ -129,20 +111,30 @@ export default function useWebSocket() {
     let connectedCount = 0;
     const agents = ['sentinel', 'stranger', 'oracle'];
 
+    const fallbackTimer = setTimeout(() => {
+      if (connectedCount < 3) {
+        console.warn("Connection timeout - falling back to demo mode");
+        setShowOfflineToast(true);
+        setTimeout(() => setShowOfflineToast(false), 4000);
+        startTestMode();
+      }
+    }, 40000);
+
     agents.forEach(agent => {
       const ws = new WebSocket(WS_URLS[agent]);
       wsRefs.current[agent] = ws;
 
       ws.onopen = () => {
+        setBackendConnectivity('connected');
         connectedCount++;
         if (connectedCount === 3) {
+          clearTimeout(fallbackTimer);
           fetch('http://localhost:8000/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
           }).catch(err => {
             console.error("Failed to trigger analysis", err);
-            setBackendConnectivity('error');
           });
         }
       };
