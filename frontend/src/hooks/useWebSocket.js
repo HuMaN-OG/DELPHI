@@ -27,11 +27,12 @@ export default function useWebSocket() {
     businessGaps: 0
   });
   const [verdict, setVerdict] = useState(null);
-  const [backendConnectivity, setBackendConnectivity] = useState('connected');
+  const [backendConnectivity, setBackendConnectivity] = useState('idle');
   const [showOfflineToast, setShowOfflineToast] = useState(false);
 
   const wsRefs = useRef({});
   const testTimerRef = useRef(null);
+  const fallbackTimerRef = useRef(null);
 
   // No mount-time check to avoid false-positives during Render cold starts
   useEffect(() => {
@@ -88,6 +89,11 @@ export default function useWebSocket() {
   }, []);
 
   const startTestMode = useCallback(() => {
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    Object.values(wsRefs.current).forEach(ws => ws?.close());
+    wsRefs.current = {};
+    setBackendConnectivity('demo');
+    setShowOfflineToast(false);
     setScreen('dashboard');
     setTargetUrl('https://demo.delphi.run (Simulation)');
     setSentinelData({ ...initialAgentState, status: 'analyzing' });
@@ -101,9 +107,14 @@ export default function useWebSocket() {
   }, [handleMessage]);
 
   const sendUrl = useCallback((url) => {
-    // We NO LONGER block here. We allow the connection attempt to go through.
-    // This fixes the issue where a failed mount-check permanently blocked sessions.
-
+    // A live request should never be presented as simulated success.
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    if (testTimerRef.current) testTimerRef.current();
+    testTimerRef.current = null;
+    Object.values(wsRefs.current).forEach(ws => ws?.close());
+    wsRefs.current = {};
+    setBackendConnectivity('connecting');
+    setShowOfflineToast(false);
     setTargetUrl(url);
     setScreen('dashboard');
 
@@ -117,32 +128,40 @@ export default function useWebSocket() {
     let connectedCount = 0;
     const agents = ['sentinel', 'stranger', 'oracle'];
 
-    // Setup a fallback timer: if we don't connect in 40 seconds, trigger demo mode
+    // Report an unavailable backend rather than fabricate a demo analysis.
     const fallbackTimer = setTimeout(() => {
       if (connectedCount < 3) {
-        console.warn("Connection timeout - falling back to demo mode");
+        console.warn("Connection timeout - real analysis unavailable");
+        setBackendConnectivity('error');
         setShowOfflineToast(true);
-        setTimeout(() => setShowOfflineToast(false), 4000);
-        startTestMode();
+        setSentinelData(prev => ({ ...prev, status: 'error' }));
+        setStrangerData(prev => ({ ...prev, status: 'error' }));
+        setOracleData(prev => ({ ...prev, status: 'error' }));
+        Object.values(wsRefs.current).forEach(ws => ws?.close());
       }
     }, 40000);
+    fallbackTimerRef.current = fallbackTimer;
 
     agents.forEach(agent => {
       const ws = new WebSocket(WS_URLS[agent]);
       wsRefs.current[agent] = ws;
 
       ws.onopen = () => {
-        setBackendConnectivity('connected');
         connectedCount++;
         if (connectedCount === 3) {
           clearTimeout(fallbackTimer);
+          fallbackTimerRef.current = null;
+          setBackendConnectivity('connected');
           fetch('https://delphi-backend.onrender.com/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
+          }).then(response => {
+            if (!response.ok) throw new Error(`Analysis request failed: ${response.status}`);
           }).catch(err => {
             console.error("Failed to trigger analysis", err);
-            // If the POST fails but sockets are open, we might stay live but show error
+            setBackendConnectivity('error');
+            setShowOfflineToast(true);
           });
         }
       };
@@ -162,13 +181,17 @@ export default function useWebSocket() {
         console.log(`${agent} connection closed`);
       };
     });
-  }, [handleMessage, startTestMode]);
+  }, [handleMessage]);
 
   const resetAll = useCallback(() => {
     Object.values(wsRefs.current).forEach(ws => ws?.close());
     wsRefs.current = {};
     if (testTimerRef.current) testTimerRef.current();
     testTimerRef.current = null;
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    fallbackTimerRef.current = null;
+    setBackendConnectivity('idle');
+    setShowOfflineToast(false);
 
     setScreen('landing');
     setTargetUrl('');
@@ -183,6 +206,7 @@ export default function useWebSocket() {
     return () => {
       Object.values(wsRefs.current).forEach(ws => ws?.close());
       if (testTimerRef.current) testTimerRef.current();
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     };
   }, []);
 
