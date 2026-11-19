@@ -23,7 +23,7 @@ function LiveClock() {
   );
 }
 
-export default function Dashboard({ sentinelData, strangerData, oracleData, metrics, url, backendConnectivity }) {
+export default function Dashboard({ sentinelData, strangerData, oracleData, metrics, url, backendConnectivity, onReset }) {
   const [logoHovered, setLogoHovered] = useState(false);
 
   const agentConfigs = [
@@ -107,7 +107,7 @@ export default function Dashboard({ sentinelData, strangerData, oracleData, metr
                 color: backendConnectivity === 'error' ? '#ef4444' : backendConnectivity === 'connecting' ? '#f97316' : '#22c55e',
                 letterSpacing: '0.1em',
               }}>
-                LIVE {backendConnectivity === 'error' && '(DEMO)'}
+                {backendConnectivity === 'demo' ? 'SIMULATION' : backendConnectivity === 'error' ? 'BACKEND OFFLINE' : backendConnectivity === 'connecting' ? 'CONNECTING' : 'LIVE'}
               </span>
             </div>
           )}
@@ -122,7 +122,7 @@ export default function Dashboard({ sentinelData, strangerData, oracleData, metr
               whiteSpace: 'nowrap',
             }}
           >
-            <span style={{ color: '#555' }}>ANALYZING: </span>
+            <span style={{ color: '#555' }}>{backendConnectivity === 'error' ? 'REQUESTED: ' : backendConnectivity === 'demo' ? 'SIMULATION: ' : 'ANALYZING: '}</span>
             {url}
           </div>
         </div>
@@ -154,6 +154,26 @@ export default function Dashboard({ sentinelData, strangerData, oracleData, metr
           <LiveClock />
         </div>
       </div>
+
+      {backendConnectivity === 'error' && (
+        <div role="alert" style={{
+          padding: '12px 24px', background: '#3a1a1a', color: '#fecaca',
+          borderBottom: '1px solid #b91c1c', display: 'flex',
+          justifyContent: 'space-between', alignItems: 'center', gap: '12px'
+        }}>
+          <span>Live backend unavailable. This request did not produce a real analysis.</span>
+          <button type="button" onClick={onReset} style={{
+            color: '#fff', background: '#991b1b', border: '1px solid #ef4444',
+            borderRadius: '6px', padding: '8px 12px', cursor: 'pointer'
+          }}>Back to start</button>
+        </div>
+      )}
+      {backendConnectivity === 'demo' && (
+        <div role="status" style={{
+          padding: '10px 24px', background: '#25202c', color: '#fde68a',
+          borderBottom: '1px solid #a16207', textAlign: 'center'
+        }}>SIMULATION ONLY — these example findings are not results from a live website analysis.</div>
+      )}
 
       {/* Main: 3 Agent Panels */}
       <div
