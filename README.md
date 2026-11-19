@@ -42,6 +42,14 @@
 
 ---
 
+## My role and demo evidence
+
+This is a three-person hackathon project from SRM Build 7.0. My reported contributions include integration/deployment and coordinating the multi-agent analysis with the live React dashboard. These statements describe my work in a team, not independent authorship of every file.
+
+Reviewers can open the live demo linked above and inspect the system architecture below. To strengthen the portfolio, add real screenshots showing (1) a public test URL, (2) the streaming analysis UI and (3) the resulting recommendations. Avoid testing URLs without authorization or revealing private data. Screenshots are not claimed here until actually captured.
+
+---
+
 ## 🚀 Overview
 
 Launching a digital product without comprehensive auditing leads to silent user churn, unhedged security vulnerabilities, and positioning failure. Most product teams audit engineering, UX design, and marketing in silos.
