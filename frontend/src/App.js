@@ -65,7 +65,7 @@ function App() {
           alignItems: 'center',
           gap: '8px',
         }}>
-          ⚠️ Backend offline — running in demo mode
+          ⚠️ Live backend unavailable — no real analysis was completed. Return to start for the separately labeled TEST MODE.
         </div>
       )}
 
@@ -78,6 +78,7 @@ function App() {
           metrics={metrics}
           url={targetUrl}
           backendConnectivity={backendConnectivity}
+          onReset={resetAll}
         />
       )}
       {screen === 'verdict' && (

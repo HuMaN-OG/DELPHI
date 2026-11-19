@@ -285,7 +285,7 @@ export default function Landing({ onSendUrl, onTestMode, backendConnectivity, da
               justifyContent: 'center',
               gap: '6px'
             }}>
-              <span style={{ fontSize: '14px' }}>⚡</span> Live backend offline — demo mode active
+              <span style={{ fontSize: '14px' }}>⚡</span> Live backend unavailable — use TEST MODE below for a clearly labeled simulation
             </div>
           )}
 
@@ -316,7 +316,7 @@ export default function Landing({ onSendUrl, onTestMode, backendConnectivity, da
               e.target.style.color = darkMode ? '#555' : '#94a3b8';
             }}
           >
-            TEST MODE
+            TEST MODE (SIMULATION)
           </button>
         </motion.form>
 

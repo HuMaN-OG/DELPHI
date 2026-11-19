@@ -2,11 +2,16 @@ import sys
 import os
 import asyncio
 import json
+import time
+import socket
+import ipaddress
+from collections import defaultdict
+from urllib.parse import urlparse
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -17,15 +22,85 @@ from agents.sentinel import run_sentinel
 from agents.stranger import run_stranger
 from agents.oracle import run_oracle
 
-app = FastAPI()
+app = FastAPI(title="DELPHI Intelligence Engine", version="1.1.0")
+
+# Configurable CORS
+cors_env = os.environ.get("CORS_ORIGINS", "").strip()
+allowed_origins = [o.strip() for o in cors_env.split(",") if o.strip()] if cors_env and cors_env != "*" else ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# SSRF Protection & Rate Limiting Configuration
+BLOCKED_HOSTNAMES = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+    "metadata.google.internal",
+    "instance-data",
+}
+
+RATE_LIMIT_WINDOW = 60
+RATE_LIMIT_MAX = 10
+_rate_limits: dict[str, list[float]] = defaultdict(list)
+
+def is_rate_limited(ip: str) -> bool:
+    now = time.time()
+    _rate_limits[ip] = [t for t in _rate_limits[ip] if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limits[ip]) >= RATE_LIMIT_MAX:
+        return True
+    _rate_limits[ip].append(now)
+    return False
+
+def validate_and_sanitize_url(url: str) -> tuple[bool, str]:
+    if not url or not isinstance(url, str):
+        return False, "Target URL is required."
+    clean_url = url.strip()
+    if len(clean_url) > 2048:
+        return False, "URL length exceeds maximum permitted limit."
+    
+    parsed = urlparse(clean_url)
+    if parsed.scheme.lower() not in ("http", "https"):
+        return False, f"Unsupported scheme '{parsed.scheme}'. Only http and https URLs are allowed."
+    
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "Could not determine hostname from URL."
+    
+    if hostname.lower() in BLOCKED_HOSTNAMES or hostname.lower().endswith(".local") or hostname.lower().endswith(".internal"):
+        return False, f"Access to internal/loopback hostname '{hostname}' is prohibited (SSRF protection)."
+    
+    try:
+        addr_info = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return False, f"Unable to resolve host '{hostname}'."
+    except Exception as e:
+        return False, f"DNS resolution failed: {e}"
+    
+    for entry in addr_info:
+        ip_str = entry[4][0]
+        try:
+            ip_obj = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False, f"Invalid resolved IP '{ip_str}'."
+        
+        if (
+            ip_obj.is_private
+            or ip_obj.is_loopback
+            or ip_obj.is_link_local
+            or ip_obj.is_reserved
+            or ip_obj.is_multicast
+            or ip_obj.is_unspecified
+        ):
+            return False, f"Target resolves to private/internal IP address ({ip_str}), blocked by SSRF policy."
+    
+    return True, clean_url
 
 class ConnectionManager:
     def __init__(self):
@@ -40,10 +115,10 @@ class ConnectionManager:
             del self.active_connections[agent]
 
     async def broadcast(self, message: dict):
-        for ws in self.active_connections.values():
+        for ws in list(self.active_connections.values()):
             try:
                 await ws.send_json(message)
-            except:
+            except Exception:
                 pass
 
 manager = ConnectionManager()
@@ -51,15 +126,31 @@ manager = ConnectionManager()
 class AnalyzePayload(BaseModel):
     url: str
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    pass
+@app.get("/health")
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "DELPHI Security Intelligence Engine",
+        "active_websockets": list(manager.active_connections.keys()),
+    }
 
 @app.post("/api/analyze")
-async def start_analysis(payload: AnalyzePayload):
-    url = payload.url
-    if not url:
-        return {"error": "No URL provided"}
+async def start_analysis(payload: AnalyzePayload, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if is_rate_limited(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded: maximum 10 analysis requests per minute per IP."
+        )
+
+    valid, result = validate_and_sanitize_url(payload.url)
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Security Policy Rejection: {result}"
+        )
+
+    sanitized_url = result
 
     # Capture connections immediately
     ws_sentinel = manager.active_connections.get("sentinel")
@@ -67,12 +158,10 @@ async def start_analysis(payload: AnalyzePayload):
     ws_oracle = manager.active_connections.get("oracle")
 
     # Run agents asynchronously with direct references
-    asyncio.create_task(run_all_agents(url, ws_sentinel, ws_stranger, ws_oracle))
-    return {"status": "Analysis started"}
+    asyncio.create_task(run_all_agents(sanitized_url, ws_sentinel, ws_stranger, ws_oracle))
+    return {"status": "Analysis started", "target": sanitized_url}
 
 async def run_all_agents(url: str, ws_sentinel, ws_stranger, ws_oracle):
-    # Direct references captured at the time of the POST request
-    
     print(f"Sentinel WS: {ws_sentinel}")
     print(f"Stranger WS: {ws_stranger}")
     print(f"Oracle WS: {ws_oracle}")
@@ -85,8 +174,12 @@ async def run_all_agents(url: str, ws_sentinel, ws_stranger, ws_oracle):
     t2 = asyncio.create_task(run_stranger(url, ws_stranger))
     t3 = asyncio.create_task(run_oracle(url, ws_oracle))
 
-    # Collect results from agents
-    results = await asyncio.gather(t1, t2, t3, return_exceptions=True)
+    # Collect results from agents with timeout (45s)
+    try:
+        results = await asyncio.wait_for(asyncio.gather(t1, t2, t3, return_exceptions=True), timeout=45.0)
+    except asyncio.TimeoutError:
+        print("Analysis timed out after 45 seconds")
+        results = [[], [], []]
     
     # Extract findings from results - ensuring they are lists
     sentinel_findings = results[0] if isinstance(results[0], list) else []
